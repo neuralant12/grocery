@@ -1,4 +1,4 @@
-const CACHE = "grocery-v1";
+const CACHE = "grocery-v2";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
@@ -17,16 +17,19 @@ self.addEventListener("activate", function (e) {
   );
 });
 
+// Network-first: always try the network so updates show up immediately,
+// fall back to cache when offline.
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
   e.respondWith(
-    caches.match(e.request).then(function (cached) {
-      if (cached) return cached;
-      return fetch(e.request).then(function (resp) {
-        const copy = resp.clone();
-        caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
-        return resp;
-      }).catch(function () { return caches.match("./index.html"); });
+    fetch(e.request).then(function (resp) {
+      var copy = resp.clone();
+      caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
+      return resp;
+    }).catch(function () {
+      return caches.match(e.request).then(function (cached) {
+        return cached || caches.match("./index.html");
+      });
     })
   );
 });
