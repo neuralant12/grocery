@@ -1,0 +1,667 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Grocery">
+<meta name="theme-color" content="#16a34a">
+<link rel="icon" id="favicon" type="image/svg+xml">
+<link rel="apple-touch-icon" id="appleIcon">
+<link rel="manifest" href="manifest.webmanifest">
+<title>Grocery</title>
+<style>
+  :root {
+    --green: #16a34a;
+    --green-soft: #dcfce7;
+    --red: #ef4444;
+    --bg: #f4f4ef;
+    --card: #ffffff;
+    --ink: #1c1c1a;
+    --muted: #9a9a92;
+    --line: #e8e8e2;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+  html, body { height: 100%; }
+
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    overscroll-behavior-y: none;
+  }
+
+  .app {
+    max-width: 480px;
+    margin: 0 auto;
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+  }
+
+  header {
+    background: var(--card);
+    border-bottom: 1px solid var(--line);
+    padding: calc(env(safe-area-inset-top) + 14px) 18px 12px;
+    position: sticky;
+    top: 0;
+    z-index: 20;
+  }
+
+  .title-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .app-icon { width: 30px; height: 30px; display: inline-flex; flex-shrink: 0; }
+  .app-icon svg { width: 100%; height: 100%; display: block; }
+
+  header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
+  .count { font-size: 13px; color: var(--muted); font-weight: 500; }
+
+  .add-row { display: flex; gap: 8px; }
+
+  .add-row input {
+    flex: 1;
+    padding: 13px 16px;
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    font-size: 16px;
+    outline: none;
+    background: var(--bg);
+    transition: border-color 0.15s, background 0.15s;
+  }
+  .add-row input:focus { border-color: var(--green); background: #fff; }
+
+  .add-row button {
+    width: 48px;
+    border: none;
+    background: var(--green);
+    color: #fff;
+    border-radius: 14px;
+    font-size: 26px;
+    font-weight: 300;
+    line-height: 1;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.1s, opacity 0.15s;
+  }
+  .add-row button:active { transform: scale(0.92); }
+
+  .tabs {
+    display: flex;
+    gap: 4px;
+    background: #e9e9e3;
+    border-radius: 13px;
+    padding: 4px;
+    margin: 14px 18px 0;
+  }
+  .tab {
+    flex: 1;
+    padding: 9px 4px;
+    border: none;
+    background: none;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+    transition: all 0.18s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+  }
+  .tab.active { background: #fff; color: var(--ink); box-shadow: 0 1px 4px rgba(0,0,0,0.1); }
+
+  .pill {
+    font-size: 11px;
+    font-weight: 700;
+    min-width: 20px;
+    height: 20px;
+    padding: 0 6px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #d8d8d0;
+    color: #6b6b63;
+  }
+  .tab.active .pill { background: var(--green); color: #fff; }
+
+  main { flex: 1; padding: 14px 14px 120px; }
+
+  .hint {
+    text-align: center;
+    font-size: 12.5px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .hint b { font-weight: 600; }
+
+  .item-wrap {
+    position: relative;
+    margin-bottom: 9px;
+    border-radius: 16px;
+    overflow: hidden;
+    height: 62px;
+  }
+
+  .swipe-bg {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    padding: 0 24px;
+    font-size: 14px;
+    font-weight: 700;
+    color: #fff;
+    pointer-events: none;
+    opacity: 0;
+  }
+  .swipe-bg.right { background: var(--green); justify-content: flex-start; }
+  .swipe-bg.left  { background: var(--red);   justify-content: flex-end; }
+  .swipe-bg svg { width: 22px; height: 22px; margin: 0 8px; }
+
+  .item {
+    position: absolute;
+    inset: 0;
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 16px;
+    display: flex;
+    align-items: center;
+    padding: 0 18px;
+    gap: 12px;
+    user-select: none;
+    touch-action: pan-y;
+    will-change: transform;
+    cursor: grab;
+  }
+  .item-text { flex: 1; font-size: 16.5px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item-qty {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--green);
+    background: var(--green-soft);
+    border-radius: 8px;
+    padding: 3px 9px;
+    white-space: nowrap;
+  }
+  .grip { color: #d8d8d0; font-size: 18px; letter-spacing: -2px; }
+
+  .completed .item { background: #fafaf8; border-style: dashed; }
+  .completed .item-text { text-decoration: line-through; color: var(--muted); font-weight: 400; }
+  .completed .item-qty { color: var(--muted); background: #efefe9; }
+
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 60px 20px;
+  }
+  .empty svg { width: 46px; height: 46px; opacity: 0.4; margin-bottom: 14px; }
+  .empty p { font-size: 15px; line-height: 1.5; }
+
+  .clear-btn {
+    display: block;
+    margin: 18px auto 0;
+    padding: 10px 22px;
+    border: 1.5px solid var(--line);
+    background: #fff;
+    border-radius: 12px;
+    font-size: 13.5px;
+    font-weight: 600;
+    color: var(--muted);
+    cursor: pointer;
+  }
+  .clear-btn:active { background: var(--bg); }
+
+  .toast {
+    position: fixed;
+    left: 50%;
+    bottom: calc(env(safe-area-inset-bottom) + 24px);
+    transform: translate(-50%, 200%);
+    background: var(--ink);
+    color: #fff;
+    padding: 13px 18px;
+    border-radius: 14px;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.25);
+    z-index: 50;
+    transition: transform 0.3s cubic-bezier(0.2,0.9,0.3,1);
+    max-width: 90vw;
+  }
+  .toast.show { transform: translate(-50%, 0); }
+  .toast button {
+    background: none;
+    border: none;
+    color: #6ee7a8;
+    font-weight: 700;
+    font-size: 14px;
+    cursor: pointer;
+    padding: 2px 4px;
+  }
+
+  .install-banner {
+    margin: 0 18px;
+    background: var(--green-soft);
+    border: 1px solid #bbf7d0;
+    border-radius: 14px;
+    padding: 12px 14px;
+    font-size: 13px;
+    color: #166534;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-top: 12px;
+  }
+  .install-banner b { font-weight: 700; }
+  .install-banner #installText { flex: 1; }
+  .install-banner .x { cursor: pointer; font-size: 18px; color: #166534; opacity: 0.6; }
+  .install-action {
+    border: none;
+    background: var(--green);
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    padding: 7px 14px;
+    border-radius: 10px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <div class="title-row">
+      <div class="brand">
+        <span class="app-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#16a34a"/><path d="M16 26 H48 V46 a7 7 0 0 1 -7 7 H23 a7 7 0 0 1 -7 -7 Z" fill="#ffffff"/><path d="M26 27 C26 16 38 16 38 27" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><path d="M32 31 C27 34 27 40 32 43 C37 40 37 34 32 31 Z" fill="#16a34a"/><path d="M32 33.5 V42" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/></svg></span>
+        <h1>Grocery</h1>
+      </div>
+      <span class="count" id="count"></span>
+    </div>
+    <div class="add-row">
+      <input id="newItem" type="text" placeholder="Add an item, or paste a list…" autocomplete="off" enterkeyhint="done" />
+      <button id="addBtn" aria-label="Add item">+</button>
+    </div>
+    <div class="tabs">
+      <button class="tab active" data-tab="list">To buy <span class="pill" id="pill-list">0</span></button>
+      <button class="tab" data-tab="done">Done <span class="pill" id="pill-done">0</span></button>
+    </div>
+  </header>
+
+  <div class="install-banner" id="installBanner">
+    <span id="installText">Install Grocery for offline, full-screen use.</span>
+    <button id="installBtn" class="install-action">Install</button>
+    <span class="x" id="dismissInstall">&times;</span>
+  </div>
+
+  <main>
+    <div data-view="list">
+      <p class="hint">Swipe <b>right →</b> to done&nbsp; · &nbsp;<b>← left</b> to delete</p>
+      <div id="listEl"></div>
+    </div>
+    <div data-view="done" hidden>
+      <p class="hint">Swipe <b>right →</b> back to list&nbsp; · &nbsp;<b>← left</b> to delete</p>
+      <div class="completed" id="doneEl"></div>
+      <button class="clear-btn" id="clearDone" hidden>Clear completed</button>
+    </div>
+  </main>
+</div>
+
+<div class="toast" id="toast">
+  <span id="toastMsg"></span>
+  <button id="toastUndo">Undo</button>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  var KEY = "shoppingItems.v2";
+  var uid = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
+  var items = load();
+  var currentTab = "list";
+  var toastTimer = null;
+  var toastUndoCb = null;
+
+  function load() {
+    try {
+      var saved = JSON.parse(localStorage.getItem(KEY));
+      if (Array.isArray(saved)) {
+        saved.forEach(function (i) { if (i.status === "cart") i.status = "list"; });
+        return saved;
+      }
+    } catch (e) {}
+    return [
+      { id: uid(), text: "Milk", qty: "x2", status: "list" },
+      { id: uid(), text: "Eggs", qty: "x12", status: "list" },
+      { id: uid(), text: "Bread", qty: "", status: "list" },
+      { id: uid(), text: "Coffee", qty: "", status: "list" }
+    ];
+  }
+  function save() { localStorage.setItem(KEY, JSON.stringify(items)); }
+  function buzz(ms) { if (navigator.vibrate) navigator.vibrate(ms || 12); }
+
+  function parseInput(raw) {
+    raw = raw.trim();
+    var m = raw.match(/^(.*?)\s*[x×]\s*(\d+)$/i) || raw.match(/^(\d+)\s*[x×]\s*(.+)$/i);
+    if (m) {
+      var firstIsNum = /^\d+$/.test(m[1]);
+      var text = (firstIsNum ? m[2] : m[1]).trim();
+      var num = firstIsNum ? m[1] : m[2];
+      if (text) return { text: text, qty: "x" + num };
+    }
+    return { text: raw, qty: "" };
+  }
+
+  function addItem() {
+    var input = document.getElementById("newItem");
+    var raw = input.value.trim();
+    if (!raw) return;
+    var p = parseInput(raw);
+    items.unshift({ id: uid(), text: p.text, qty: p.qty, status: "list" });
+    save();
+    buzz();
+    if (currentTab !== "list") switchTab("list");
+    else render();
+    input.value = "";
+    input.focus();
+  }
+
+  function addMany(text) {
+    var added = [];
+    text.split(/[\r\n,]+/).forEach(function (raw) {
+      var clean = raw.replace(/^\s*(?:[-*•·▪◦‣⁃]|\d+[.)]|\[[ xX]?\])\s+/, "").trim();
+      if (!clean) return;
+      var p = parseInput(clean);
+      added.push({ id: uid(), text: p.text, qty: p.qty, status: "list" });
+    });
+    if (!added.length) return;
+    items = added.concat(items);
+    save();
+    buzz(20);
+    if (currentTab !== "list") switchTab("list"); else render();
+    var ids = added.map(function (i) { return i.id; });
+    showToast("Added " + added.length + " item" + (added.length > 1 ? "s" : ""), function () {
+      items = items.filter(function (i) { return ids.indexOf(i.id) === -1; });
+      save();
+      render();
+    });
+  }
+
+  function setStatus(id, status) {
+    var it = items.find(function (i) { return i.id === id; });
+    if (it) { it.status = status; save(); render(); buzz(); }
+  }
+
+  function deleteItem(id) {
+    var idx = items.findIndex(function (i) { return i.id === id; });
+    if (idx === -1) return;
+    var removed = items[idx];
+    items.splice(idx, 1);
+    save();
+    render();
+    buzz(20);
+    showToast(removed.text + " deleted", function () {
+      items.splice(Math.min(idx, items.length), 0, removed);
+      save();
+      render();
+    });
+  }
+
+  function showToast(msg, undoCb) {
+    var toast = document.getElementById("toast");
+    document.getElementById("toastMsg").textContent = msg;
+    document.getElementById("toastUndo").style.display = undoCb ? "" : "none";
+    toastUndoCb = undoCb || null;
+    toast.classList.add("show");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(function () { toast.classList.remove("show"); toastUndoCb = null; }, 4000);
+  }
+
+  document.getElementById("toastUndo").addEventListener("click", function () {
+    if (toastUndoCb) toastUndoCb();
+    toastUndoCb = null;
+    document.getElementById("toast").classList.remove("show");
+  });
+
+  function switchTab(tab) {
+    currentTab = tab;
+    var tabs = document.querySelectorAll(".tab");
+    tabs.forEach(function (t) { t.classList.toggle("active", t.dataset.tab === tab); });
+    document.querySelectorAll("[data-view]").forEach(function (v) {
+      v.hidden = v.dataset.view !== tab;
+    });
+  }
+
+  document.querySelectorAll(".tab").forEach(function (t) {
+    t.addEventListener("click", function () { switchTab(t.dataset.tab); });
+  });
+
+  function render() {
+    var groups = { list: [], done: [] };
+    items.forEach(function (i) { (groups[i.status] || groups.list).push(i); });
+
+    document.getElementById("pill-list").textContent = groups.list.length;
+    document.getElementById("pill-done").textContent = groups.done.length;
+
+    var remaining = groups.list.length;
+    document.getElementById("count").textContent =
+      remaining === 0 ? "all done 🎉" : remaining + (remaining === 1 ? " item left" : " items left");
+
+    paint("listEl", groups.list, "list", "Nothing to buy yet.<br>Add items above to get started.");
+    paint("doneEl", groups.done, "done", "Nothing completed yet.");
+
+    document.getElementById("clearDone").hidden = groups.done.length === 0;
+  }
+
+  function paint(elId, group, status, emptyMsg) {
+    var el = document.getElementById(elId);
+    el.innerHTML = "";
+    if (!group.length) {
+      el.innerHTML = '<div class="empty">' + bagIcon() + '<p>' + emptyMsg + '</p></div>';
+      return;
+    }
+    group.forEach(function (item) { el.appendChild(buildItem(item, status)); });
+  }
+
+  function buildItem(item, status) {
+    var wrap = document.createElement("div");
+    wrap.className = "item-wrap";
+
+    var bgRight = document.createElement("div");
+    bgRight.className = "swipe-bg right";
+    bgRight.innerHTML = status === "list"
+      ? checkIcon() + "<span>Done</span>"
+      : backIcon() + "<span>To buy</span>";
+
+    var bgLeft = document.createElement("div");
+    bgLeft.className = "swipe-bg left";
+    bgLeft.innerHTML = "<span>Delete</span>" + trashIcon();
+
+    var card = document.createElement("div");
+    card.className = "item";
+    var qty = item.qty ? '<span class="item-qty">' + item.qty + "</span>" : "";
+    card.innerHTML = '<span class="item-text"></span>' + qty + '<span class="grip">⠿</span>';
+    card.querySelector(".item-text").textContent = item.text;
+
+    wrap.appendChild(bgRight);
+    wrap.appendChild(bgLeft);
+    wrap.appendChild(card);
+
+    attachSwipe(card, bgRight, bgLeft, item, status);
+    return wrap;
+  }
+
+  function attachSwipe(card, bgRight, bgLeft, item, status) {
+    var startX = 0, startY = 0, dx = 0, dragging = false, axisLocked = null;
+    var TRIGGER = 90;
+
+    function down(x, y) {
+      startX = x; startY = y; dx = 0; dragging = true; axisLocked = null;
+      card.style.transition = "none";
+    }
+    function move(x, y) {
+      if (!dragging) return;
+      var mx = x - startX, my = y - startY;
+      if (axisLocked === null && (Math.abs(mx) > 8 || Math.abs(my) > 8)) {
+        axisLocked = Math.abs(mx) > Math.abs(my) ? "x" : "y";
+      }
+      if (axisLocked !== "x") return;
+      dx = mx;
+      card.style.transform = "translateX(" + dx + "px)";
+      var p = Math.min(1, Math.abs(dx) / TRIGGER);
+      bgRight.style.opacity = dx > 0 ? p : 0;
+      bgLeft.style.opacity = dx < 0 ? p : 0;
+      return true;
+    }
+    function up() {
+      if (!dragging) return;
+      dragging = false;
+      card.style.transition = "transform 0.22s cubic-bezier(0.3,0,0.2,1)";
+      if (dx > TRIGGER) {
+        card.style.transform = "translateX(115%)";
+        setTimeout(function () {
+          setStatus(item.id, status === "list" ? "done" : "list");
+        }, 200);
+      } else if (dx < -TRIGGER) {
+        card.style.transform = "translateX(-115%)";
+        setTimeout(function () { deleteItem(item.id); }, 200);
+      } else {
+        card.style.transform = "translateX(0)";
+        bgRight.style.opacity = 0;
+        bgLeft.style.opacity = 0;
+      }
+    }
+
+    card.addEventListener("touchstart", function (e) { down(e.touches[0].clientX, e.touches[0].clientY); }, { passive: true });
+    card.addEventListener("touchmove", function (e) {
+      if (move(e.touches[0].clientX, e.touches[0].clientY) && e.cancelable) e.preventDefault();
+    }, { passive: false });
+    card.addEventListener("touchend", up);
+    card.addEventListener("touchcancel", up);
+
+    var mouseActive = false;
+    card.addEventListener("mousedown", function (e) { mouseActive = true; down(e.clientX, e.clientY); });
+    window.addEventListener("mousemove", function (e) { if (mouseActive) move(e.clientX, e.clientY); });
+    window.addEventListener("mouseup", function () { if (mouseActive) { mouseActive = false; up(); } });
+  }
+
+  function checkIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>'; }
+  function trashIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>'; }
+  function backIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>'; }
+  function bagIcon() { return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M6 7h12l1 13a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1L6 7z"/><path d="M9 7V5a3 3 0 0 1 6 0v2"/></svg>'; }
+
+  document.getElementById("addBtn").addEventListener("click", addItem);
+  document.getElementById("newItem").addEventListener("keydown", function (e) {
+    if (e.key === "Enter") addItem();
+  });
+  document.getElementById("newItem").addEventListener("paste", function (e) {
+    var data = e.clipboardData || window.clipboardData;
+    if (!data) return;
+    var text = data.getData("text");
+    if (text && /[\r\n,]/.test(text)) {
+      e.preventDefault();
+      addMany(text);
+      this.value = "";
+    }
+  });
+  document.getElementById("clearDone").addEventListener("click", function () {
+    items = items.filter(function (i) { return i.status !== "done"; });
+    save(); render();
+  });
+
+  var deferredPrompt = null;
+  var banner = document.getElementById("installBanner");
+  var installBtn = document.getElementById("installBtn");
+  var installText = document.getElementById("installText");
+  var standalone = window.matchMedia("(display-mode: standalone)").matches || window.navigator.standalone;
+  var dismissed = localStorage.getItem("hideInstallTip") === "1";
+
+  document.getElementById("dismissInstall").addEventListener("click", function () {
+    banner.style.display = "none";
+    localStorage.setItem("hideInstallTip", "1");
+  });
+
+  window.addEventListener("beforeinstallprompt", function (e) {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (!standalone && !dismissed) {
+      installText.textContent = "Install Grocery for offline, full-screen use.";
+      installBtn.style.display = "";
+      banner.style.display = "flex";
+    }
+  });
+
+  installBtn.addEventListener("click", function () {
+    if (!deferredPrompt) return;
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(function () {
+      deferredPrompt = null;
+      banner.style.display = "none";
+    });
+  });
+
+  window.addEventListener("appinstalled", function () {
+    banner.style.display = "none";
+    deferredPrompt = null;
+  });
+
+  if (/iphone|ipad|ipod/i.test(navigator.userAgent) && !standalone && !dismissed) {
+    installText.innerHTML = "Install: tap the Share icon, then <b>Add to Home Screen</b>.";
+    installBtn.style.display = "none";
+    banner.style.display = "flex";
+  }
+
+  (function setupIcons() {
+    var svgEl = document.querySelector(".app-icon svg");
+    if (!svgEl) return;
+    var svgStr = new XMLSerializer().serializeToString(svgEl);
+    var svgUri = "data:image/svg+xml;charset=utf-8," + encodeURIComponent(svgStr);
+    var fav = document.getElementById("favicon");
+    if (fav) fav.href = svgUri;
+    var img = new Image();
+    img.onload = function () {
+      try {
+        var c = document.createElement("canvas");
+        c.width = c.height = 180;
+        var ctx = c.getContext("2d");
+        ctx.fillStyle = "#16a34a";
+        ctx.fillRect(0, 0, 180, 180);
+        ctx.drawImage(img, 0, 0, 180, 180);
+        var apple = document.getElementById("appleIcon");
+        if (apple) apple.href = c.toDataURL("image/png");
+      } catch (e) {}
+    };
+    img.src = svgUri;
+  })();
+
+  render();
+})();
+</script>
+<script>
+  if ("serviceWorker" in navigator && location.protocol.indexOf("http") === 0) {
+    window.addEventListener("load", function () {
+      navigator.serviceWorker.register("./sw.js").catch(function () {});
+    });
+  }
+</script>
+</body>
+</html>
