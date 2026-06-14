@@ -370,6 +370,25 @@
     cursor: pointer;
     white-space: nowrap;
   }
+
+  .title-actions { display: flex; align-items: center; gap: 8px; }
+  .icon-btn {
+    position: relative;
+    width: 38px; height: 38px; flex-shrink: 0;
+    border: 1.5px solid var(--line); border-radius: 50%;
+    background: #fff; color: var(--ink);
+    display: inline-flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: transform 0.1s;
+  }
+  .icon-btn:active { transform: scale(0.92); }
+  .icon-btn svg { width: 18px; height: 18px; }
+  .icon-btn.synced { color: var(--green); border-color: #bbf7d0; background: var(--green-soft); }
+  .icon-btn.synced::after {
+    content: ""; position: absolute; top: 0; right: 0;
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--green); border: 2px solid #fff;
+  }
+  #confirmModal { z-index: 110; }
 </style>
 </head>
 <body>
@@ -380,7 +399,10 @@
         <span class="app-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#16a34a"/><path d="M16 26 H48 V46 a7 7 0 0 1 -7 7 H23 a7 7 0 0 1 -7 -7 Z" fill="#ffffff"/><path d="M26 27 C26 16 38 16 38 27" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><path d="M32 31 C27 34 27 40 32 43 C37 40 37 34 32 31 Z" fill="#16a34a"/><path d="M32 33.5 V42" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/></svg></span>
         <h1>Grocery</h1>
       </div>
-      <button class="mode-toggle" id="modeToggle" aria-label="Switch to regulars"></button>
+      <div class="title-actions">
+        <button class="icon-btn" id="shareBtn" aria-label="Share list"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg></button>
+        <button class="mode-toggle" id="modeToggle" aria-label="Switch to regulars"></button>
+      </div>
     </div>
     <div class="add-row">
       <input id="newItem" type="text" placeholder="Add an item, or paste a list…" autocomplete="off" enterkeyhint="done" />
@@ -434,6 +456,10 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="shareModal" hidden>
+  <div class="modal" id="shareModalBody"></div>
+</div>
+
 <script>
 (function () {
   "use strict";
@@ -441,6 +467,15 @@
   var KEY = "shoppingItems.v2";
   var REG_KEY = "groceryRegulars.v1";
   var MODE_KEY = "groceryMode";
+  var LIST_KEY = "groceryListId";
+  var firebaseConfig = {
+    apiKey: "AIzaSyDQSWpCK-KiuRQlApn6wn55iYFvgW253JI",
+    authDomain: "grocery-a7a21.firebaseapp.com",
+    projectId: "grocery-a7a21",
+    storageBucket: "grocery-a7a21.firebasestorage.app",
+    messagingSenderId: "420468438299",
+    appId: "1:420468438299:web:86f84b4aec4a5d53068fbe"
+  };
   var uid = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
   var items = load();
   var regulars = loadReg();
@@ -464,7 +499,7 @@
       { id: uid(), text: "Coffee", qty: "", status: "list" }
     ];
   }
-  function save() { localStorage.setItem(KEY, JSON.stringify(items)); }
+  function save() { localStorage.setItem(KEY, JSON.stringify(items)); if (sync && sync.active) sync.pushItems(); }
 
   function loadReg() {
     try {
@@ -479,7 +514,7 @@
       { id: uid(), text: "Bananas", qty: "" }
     ];
   }
-  function saveReg() { localStorage.setItem(REG_KEY, JSON.stringify(regulars)); }
+  function saveReg() { localStorage.setItem(REG_KEY, JSON.stringify(regulars)); if (sync && sync.active) sync.pushRegulars(); }
   function norm(t) { return (t || "").trim().toLowerCase(); }
   function isRegular(text) { return regulars.some(function (r) { return norm(r.text) === norm(text); }); }
 
@@ -1028,7 +1063,247 @@
     img.src = svgUri;
   })();
 
+  // ===== Cloud sync (Firebase) =====
+  function randomCode(n) {
+    var s = "";
+    while (s.length < n) { s += Math.random().toString(36).slice(2); }
+    return s.slice(0, n);
+  }
+
+  var sync = {
+    active: false, uid: null, db: null, fs: null, auth: null,
+    listId: localStorage.getItem(LIST_KEY) || null,
+    unsubItems: null, unsubReg: null, lastItems: {}, lastReg: {}, _rp: null,
+
+    serItem: function (it) { return JSON.stringify([it.text, it.qty || "", it.status, it.order]); },
+    serReg: function (r) { return JSON.stringify([r.text, r.qty || "", r.order]); },
+    linkFor: function (id) { return location.origin + location.pathname + "?join=" + id; },
+
+    ensureReady: function () {
+      var self = this;
+      if (self._rp) return self._rp;
+      self._rp = (async function () {
+        var V = "https://www.gstatic.com/firebasejs/10.12.0/";
+        var appMod = await import(V + "firebase-app.js");
+        var authMod = await import(V + "firebase-auth.js");
+        var fsMod = await import(V + "firebase-firestore.js");
+        var app = appMod.initializeApp(firebaseConfig);
+        self.fs = fsMod;
+        self.auth = authMod.getAuth(app);
+        try {
+          self.db = fsMod.initializeFirestore(app, { localCache: fsMod.persistentLocalCache({ tabManager: fsMod.persistentMultipleTabManager() }) });
+        } catch (e) { self.db = fsMod.getFirestore(app); }
+        await new Promise(function (resolve, reject) {
+          var done = false;
+          authMod.onAuthStateChanged(self.auth, function (user) { if (user && !done) { done = true; self.uid = user.uid; resolve(); } });
+          authMod.signInAnonymously(self.auth).catch(reject);
+        });
+      })();
+      return self._rp;
+    },
+
+    resume: function () {
+      var self = this;
+      if (!self.listId) { self.updateUI(); return; }
+      self.ensureReady().then(function () { self.subscribe(); }).catch(function () { self.updateUI(); });
+    },
+
+    subscribe: function () {
+      var self = this, fs = self.fs;
+      self.active = true;
+      localStorage.setItem(LIST_KEY, self.listId);
+      if (self.unsubItems) self.unsubItems();
+      if (self.unsubReg) self.unsubReg();
+      self.unsubItems = fs.onSnapshot(fs.collection(self.db, "lists", self.listId, "items"), function (snap) {
+        var arr = snap.docs.map(function (d) { var x = d.data(); return { id: d.id, text: x.text, qty: x.qty || "", status: x.status || "list", order: x.order || 0 }; });
+        arr.sort(function (a, b) { return (b.order || 0) - (a.order || 0); });
+        items = arr;
+        self.lastItems = {}; items.forEach(function (it) { self.lastItems[it.id] = self.serItem(it); });
+        localStorage.setItem(KEY, JSON.stringify(items));
+        render();
+      }, function (e) { console.error("[sync] snapshot error", e); });
+      self.unsubReg = fs.onSnapshot(fs.collection(self.db, "lists", self.listId, "regulars"), function (snap) {
+        var arr = snap.docs.map(function (d) { var x = d.data(); return { id: d.id, text: x.text, qty: x.qty || "", order: x.order || 0 }; });
+        arr.sort(function (a, b) { return (b.order || 0) - (a.order || 0); });
+        regulars = arr;
+        self.lastReg = {}; regulars.forEach(function (r) { self.lastReg[r.id] = self.serReg(r); });
+        localStorage.setItem(REG_KEY, JSON.stringify(regulars));
+        render();
+      }, function (e) { console.error("[sync] snapshot error", e); });
+      self.updateUI();
+    },
+
+    pushItems: function () {
+      var self = this; if (!self.active || !self.db) return;
+      var fs = self.fs, batch = fs.writeBatch(self.db), now = {}, changed = false, t = Date.now();
+      items.forEach(function (it, idx) {
+        if (it.order == null) it.order = t - idx;
+        var ser = self.serItem(it); now[it.id] = ser;
+        if (self.lastItems[it.id] !== ser) { changed = true; batch.set(fs.doc(self.db, "lists", self.listId, "items", it.id), { text: it.text, qty: it.qty || "", status: it.status, order: it.order }); }
+      });
+      Object.keys(self.lastItems).forEach(function (id) { if (!(id in now)) { changed = true; batch.delete(fs.doc(self.db, "lists", self.listId, "items", id)); } });
+      self.lastItems = now;
+      if (changed) batch.commit().catch(function () {});
+    },
+
+    pushRegulars: function () {
+      var self = this; if (!self.active || !self.db) return;
+      var fs = self.fs, batch = fs.writeBatch(self.db), now = {}, changed = false, t = Date.now();
+      regulars.forEach(function (r, idx) {
+        if (r.order == null) r.order = t - idx;
+        var ser = self.serReg(r); now[r.id] = ser;
+        if (self.lastReg[r.id] !== ser) { changed = true; batch.set(fs.doc(self.db, "lists", self.listId, "regulars", r.id), { text: r.text, qty: r.qty || "", order: r.order }); }
+      });
+      Object.keys(self.lastReg).forEach(function (id) { if (!(id in now)) { changed = true; batch.delete(fs.doc(self.db, "lists", self.listId, "regulars", id)); } });
+      self.lastReg = now;
+      if (changed) batch.commit().catch(function () {});
+    },
+
+    createList: async function () {
+      var self = this;
+      await self.ensureReady();
+      var fs = self.fs, listId = randomCode(20), t = Date.now();
+      await fs.setDoc(fs.doc(self.db, "lists", listId), { members: [self.uid], createdAt: fs.serverTimestamp() });
+      var batch = fs.writeBatch(self.db);
+      items.forEach(function (it, idx) { it.order = t - idx; batch.set(fs.doc(self.db, "lists", listId, "items", it.id), { text: it.text, qty: it.qty || "", status: it.status, order: it.order }); });
+      regulars.forEach(function (r, idx) { r.order = t - idx; batch.set(fs.doc(self.db, "lists", listId, "regulars", r.id), { text: r.text, qty: r.qty || "", order: r.order }); });
+      await batch.commit();
+      self.lastItems = {}; items.forEach(function (it) { self.lastItems[it.id] = self.serItem(it); });
+      self.lastReg = {}; regulars.forEach(function (r) { self.lastReg[r.id] = self.serReg(r); });
+      self.listId = listId;
+      self.subscribe();
+      return listId;
+    },
+
+    joinList: async function (code) {
+      var self = this;
+      code = (code || "").trim();
+      var m = code.match(/[?&]join=([^&\s]+)/);
+      if (m) code = decodeURIComponent(m[1]);
+      code = code.replace(/[^A-Za-z0-9]/g, "");
+      if (!code) throw new Error("empty");
+      await self.ensureReady();
+      var fs = self.fs, ref = fs.doc(self.db, "lists", code);
+      var snap = await fs.getDoc(ref);
+      if (!snap.exists()) throw new Error("notfound");
+      await fs.updateDoc(ref, { members: fs.arrayUnion(self.uid) });
+      self.listId = code; self.lastItems = {}; self.lastReg = {};
+      self.subscribe();
+      return code;
+    },
+
+    leave: function () {
+      var self = this;
+      if (self.unsubItems) { self.unsubItems(); self.unsubItems = null; }
+      if (self.unsubReg) { self.unsubReg(); self.unsubReg = null; }
+      self.active = false; self.listId = null;
+      localStorage.removeItem(LIST_KEY);
+      self.updateUI(); render();
+    },
+
+    updateUI: function () {
+      var btn = document.getElementById("shareBtn");
+      if (btn) btn.classList.toggle("synced", this.active);
+    }
+  };
+
+  var _qrPromise = null;
+  function loadQR() {
+    if (window.QRCode) return Promise.resolve();
+    if (_qrPromise) return _qrPromise;
+    _qrPromise = new Promise(function (resolve, reject) {
+      var s = document.createElement("script");
+      s.src = "https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js";
+      s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+    return _qrPromise;
+  }
+  function makeQR(text) {
+    var box = document.getElementById("qrCode");
+    if (!box) return;
+    loadQR().then(function () {
+      box.innerHTML = "";
+      new window.QRCode(box, { text: text, width: 158, height: 158, colorDark: "#1c1c1a", colorLight: "#ffffff", correctLevel: window.QRCode.CorrectLevel.M });
+    }).catch(function () { box.innerHTML = '<span style="font-size:11px;color:var(--muted)">QR unavailable</span>'; });
+  }
+
+  function openShareModal() {
+    var overlay = document.getElementById("shareModal");
+    var body = document.getElementById("shareModalBody");
+    function close() { overlay.hidden = true; }
+    overlay.onclick = function (e) { if (e.target === overlay) close(); };
+
+    function shared() {
+      var link = sync.linkFor(sync.listId);
+      body.innerHTML =
+        '<p class="modal-title">List is shared</p>' +
+        '<p class="modal-sub">On another phone, scan this code or open the link — both lists then stay in sync, live.</p>' +
+        '<div style="display:flex;justify-content:center;margin:2px 0 14px;"><div id="qrCode" style="width:158px;height:158px;"></div></div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
+          '<input id="shareLink" readonly value="' + link + '" style="flex:1;min-width:0;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:12px;background:var(--bg);color:var(--ink);" />' +
+          '<button id="copyLink" style="flex:0 0 auto;border:none;border-radius:10px;padding:0 16px;background:var(--green);color:#fff;font-weight:700;font-size:13px;cursor:pointer;">Copy</button>' +
+        '</div>' +
+        '<div class="modal-actions">' +
+          '<button class="modal-btn cancel" id="shareClose">Close</button>' +
+          '<button class="modal-btn danger" id="shareLeave">Stop sharing</button>' +
+        '</div>';
+      document.getElementById("shareClose").onclick = close;
+      document.getElementById("copyLink").onclick = function () {
+        if (navigator.clipboard) navigator.clipboard.writeText(link).then(function () { showToast("Link copied"); }, function () {});
+        else { var i = document.getElementById("shareLink"); i.select(); try { document.execCommand("copy"); showToast("Link copied"); } catch (e) {} }
+      };
+      document.getElementById("shareLeave").onclick = function () {
+        close();
+        confirmAction("Stop sharing on this phone?", "This phone keeps its current list but stops syncing. Other phones stay shared.", "Stop sharing", function () { sync.leave(); showToast("Stopped sharing on this device"); });
+      };
+      makeQR(link);
+    }
+
+    function unshared() {
+      body.innerHTML =
+        '<p class="modal-title">Share this list</p>' +
+        '<p class="modal-sub">Create a shared list, then open the link on another phone. Everyone sees the same list, updated live.</p>' +
+        '<button id="createList" style="width:100%;border:none;border-radius:12px;padding:13px;background:var(--green);color:#fff;font-weight:700;font-size:15px;cursor:pointer;margin-bottom:16px;">Create a shared list</button>' +
+        '<div style="text-align:center;color:var(--muted);font-size:12px;margin-bottom:12px;">— or join one —</div>' +
+        '<div style="display:flex;gap:8px;margin-bottom:16px;">' +
+          '<input id="joinCode" placeholder="Paste link or code" style="flex:1;min-width:0;padding:11px 12px;border:1.5px solid var(--line);border-radius:10px;font-size:13px;background:var(--bg);color:var(--ink);" />' +
+          '<button id="joinBtn" style="flex:0 0 auto;border:none;border-radius:10px;padding:0 16px;background:var(--ink);color:#fff;font-weight:700;font-size:13px;cursor:pointer;">Join</button>' +
+        '</div>' +
+        '<div class="modal-actions"><button class="modal-btn cancel" id="shareClose">Close</button></div>';
+      document.getElementById("shareClose").onclick = close;
+      document.getElementById("createList").onclick = function () {
+        var b = this; b.textContent = "Creating…"; b.disabled = true;
+        sync.createList().then(function () { shared(); showToast("Shared list created"); }).catch(function () { b.textContent = "Create a shared list"; b.disabled = false; showToast("Couldn't create — check connection"); });
+      };
+      document.getElementById("joinBtn").onclick = function () {
+        var code = document.getElementById("joinCode").value;
+        if (!code.trim()) return;
+        confirmAction("Join this shared list?", "This phone's current list will be replaced by the shared one.", "Join", function () {
+          sync.joinList(code).then(function () { shared(); showToast("Joined the shared list"); }).catch(function (e) { showToast(e && e.message === "notfound" ? "List not found — check the code" : "Couldn't join — check connection"); });
+        });
+      };
+    }
+
+    overlay.hidden = false;
+    if (sync.active) shared(); else unshared();
+  }
+
+  document.getElementById("shareBtn").addEventListener("click", openShareModal);
+
   setMode(mode);
+  sync.resume();
+
+  (function handleJoinParam() {
+    var m = location.search.match(/[?&]join=([^&]+)/);
+    if (!m) return;
+    var code = decodeURIComponent(m[1]).replace(/[^A-Za-z0-9]/g, "");
+    history.replaceState(null, "", location.pathname);
+    if (!code || code === sync.listId) return;
+    confirmAction("Join shared list?", "Open this shared grocery list here? This phone's current list will be replaced.", "Join", function () {
+      sync.joinList(code).then(function () { showToast("Joined the shared list"); }).catch(function () { showToast("Couldn't open that link"); });
+    });
+  })();
 })();
 </script>
 <script>

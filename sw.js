@@ -1,4 +1,4 @@
-const CACHE = "grocery-v2";
+const CACHE = "grocery-v3";
 const ASSETS = ["./", "./index.html", "./manifest.webmanifest", "./icon.svg"];
 
 self.addEventListener("install", function (e) {
@@ -17,10 +17,11 @@ self.addEventListener("activate", function (e) {
   );
 });
 
-// Network-first: always try the network so updates show up immediately,
-// fall back to cache when offline.
+// Only manage our own files. Cross-origin requests (Firebase, CDNs) pass
+// straight through so the database/realtime traffic is never intercepted.
 self.addEventListener("fetch", function (e) {
   if (e.request.method !== "GET") return;
+  if (new URL(e.request.url).origin !== self.location.origin) return;
   e.respondWith(
     fetch(e.request).then(function (resp) {
       var copy = resp.clone();
