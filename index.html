@@ -231,8 +231,8 @@
   .star-btn svg { width: 22px; height: 22px; }
 
   .addall-btn {
-    width: 100%;
-    margin: 0 0 12px;
+    width: calc(100% - 36px);
+    margin: 14px 18px 0;
     padding: 13px;
     border: none;
     border-radius: 14px;
@@ -275,6 +275,43 @@
     cursor: pointer;
   }
   .clear-btn:active { background: var(--bg); }
+  .clear-btn.danger { color: var(--red); border-color: #f0cccc; }
+  .clear-btn.danger:active { background: #fdeeee; }
+
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(20,20,18,0.45);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .modal {
+    background: #fff;
+    border-radius: 18px;
+    padding: 22px 20px 18px;
+    width: 100%;
+    max-width: 320px;
+    box-shadow: 0 16px 48px rgba(0,0,0,0.3);
+  }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .modal-sub { font-size: 14px; color: var(--muted); line-height: 1.45; margin-bottom: 20px; }
+  .modal-actions { display: flex; gap: 10px; }
+  .modal-btn {
+    flex: 1;
+    padding: 12px;
+    border-radius: 12px;
+    font-size: 14.5px;
+    font-weight: 700;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.1s;
+  }
+  .modal-btn:active { transform: scale(0.97); }
+  .modal-btn.cancel { background: var(--bg); color: var(--ink); border: 1.5px solid var(--line); }
+  .modal-btn.danger { background: var(--red); color: #fff; }
 
   .toast {
     position: fixed;
@@ -351,9 +388,9 @@
     </div>
     <div class="tabs">
       <button class="tab active" data-tab="list">To buy <span class="pill" id="pill-list">0</span></button>
-      <button class="tab" data-tab="regulars" hidden>Regulars <span class="pill" id="pill-reg">0</span></button>
       <button class="tab" data-tab="done">Done <span class="pill" id="pill-done">0</span></button>
     </div>
+    <button class="addall-btn" id="addAllBtn" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add all to list</button>
   </header>
 
   <div class="install-banner" id="installBanner">
@@ -366,16 +403,17 @@
     <div data-view="list">
       <p class="hint">Swipe <b>right →</b> to done&nbsp; · &nbsp;<b>← left</b> to delete&nbsp; · &nbsp;★ save</p>
       <div id="listEl"></div>
+      <button class="clear-btn danger" id="clearList" hidden>Clear list</button>
     </div>
     <div data-view="regulars" hidden>
-      <button class="addall-btn" id="addAllBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg> Add all to list</button>
       <p class="hint">Tap <b>+</b> or swipe <b>right →</b> to add&nbsp; · &nbsp;<b>← left</b> to remove</p>
       <div id="regularsEl"></div>
+      <button class="clear-btn danger" id="clearRegulars" hidden>Clear all regulars</button>
     </div>
     <div data-view="done" hidden>
       <p class="hint">Swipe <b>right →</b> back to list&nbsp; · &nbsp;<b>← left</b> to delete</p>
       <div class="completed" id="doneEl"></div>
-      <button class="clear-btn" id="clearDone" hidden>Clear completed</button>
+      <button class="clear-btn danger" id="clearDone" hidden>Clear completed</button>
     </div>
   </main>
 </div>
@@ -383,6 +421,17 @@
 <div class="toast" id="toast">
   <span id="toastMsg"></span>
   <button id="toastUndo">Undo</button>
+</div>
+
+<div class="modal-overlay" id="confirmModal" hidden>
+  <div class="modal">
+    <p class="modal-title" id="confirmTitle">Clear all?</p>
+    <p class="modal-sub" id="confirmSub"></p>
+    <div class="modal-actions">
+      <button class="modal-btn cancel" id="confirmCancel">Cancel</button>
+      <button class="modal-btn danger" id="confirmOk">Clear</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -620,6 +669,63 @@
     document.getElementById("toast").classList.remove("show");
   });
 
+  function confirmAction(title, sub, okLabel, onOk) {
+    var overlay = document.getElementById("confirmModal");
+    document.getElementById("confirmTitle").textContent = title;
+    var subEl = document.getElementById("confirmSub");
+    subEl.textContent = sub || "";
+    subEl.hidden = !sub;
+    var okBtn = document.getElementById("confirmOk");
+    var cancelBtn = document.getElementById("confirmCancel");
+    okBtn.textContent = okLabel || "Clear";
+    overlay.hidden = false;
+    function close() {
+      overlay.hidden = true;
+      okBtn.onclick = null; cancelBtn.onclick = null; overlay.onclick = null;
+    }
+    okBtn.onclick = function () { close(); onOk(); };
+    cancelBtn.onclick = close;
+    overlay.onclick = function (e) { if (e.target === overlay) close(); };
+  }
+
+  function clearList() {
+    var removed = items.filter(function (i) { return i.status === "list"; });
+    if (!removed.length) return;
+    confirmAction("Clear your To buy list?",
+      removed.length + " item" + (removed.length > 1 ? "s" : "") + " will be removed.",
+      "Clear list", function () {
+        items = items.filter(function (i) { return i.status !== "list"; });
+        save(); render(); buzz(20);
+        showToast("Cleared " + removed.length + " item" + (removed.length > 1 ? "s" : ""), function () {
+          items = removed.concat(items); save(); render();
+        });
+      });
+  }
+
+  function clearRegularsAll() {
+    if (!regulars.length) return;
+    var removed = regulars.slice();
+    confirmAction("Clear all regulars?",
+      removed.length + " saved item" + (removed.length > 1 ? "s" : "") + " will be removed.",
+      "Clear all", function () {
+        regulars = [];
+        saveReg(); render(); buzz(20);
+        showToast("Cleared regulars", function () { regulars = removed; saveReg(); render(); });
+      });
+  }
+
+  function clearDoneAll() {
+    var removed = items.filter(function (i) { return i.status === "done"; });
+    if (!removed.length) return;
+    confirmAction("Clear completed items?",
+      removed.length + " done item" + (removed.length > 1 ? "s" : "") + " will be removed.",
+      "Clear", function () {
+        items = items.filter(function (i) { return i.status !== "done"; });
+        save(); render(); buzz(20);
+        showToast("Cleared completed", function () { items = items.concat(removed); save(); render(); });
+      });
+  }
+
   function switchTab(tab) {
     currentTab = tab;
     var tabs = document.querySelectorAll(".tab");
@@ -639,15 +745,14 @@
     mode = m;
     localStorage.setItem(MODE_KEY, m);
     var plan = (m === "plan");
-    document.querySelector('[data-tab="list"]').hidden = plan;
-    document.querySelector('[data-tab="done"]').hidden = plan;
-    document.querySelector('[data-tab="regulars"]').hidden = !plan;
+    document.querySelector(".tabs").hidden = plan;
     var toggle = document.getElementById("modeToggle");
     toggle.innerHTML = plan
       ? bagIcon() + "<span>Shopping</span>"
       : starIcon(false) + "<span>Regulars</span>";
     toggle.setAttribute("aria-label", plan ? "Switch to shopping mode" : "Switch to regulars");
     switchTab(plan ? "regulars" : "list");
+    render();
   }
 
   document.getElementById("modeToggle").addEventListener("click", function () {
@@ -661,13 +766,15 @@
 
     document.getElementById("pill-list").textContent = groups.list.length;
     document.getElementById("pill-done").textContent = groups.done.length;
-    document.getElementById("pill-reg").textContent = regulars.length;
 
     paint("listEl", groups.list, "list", "Nothing to buy yet.<br>Add items above to get started.");
     paint("doneEl", groups.done, "done", "Nothing completed yet.");
     paintRegulars();
 
+    document.getElementById("clearList").hidden = groups.list.length === 0;
     document.getElementById("clearDone").hidden = groups.done.length === 0;
+    document.getElementById("clearRegulars").hidden = regulars.length === 0;
+    document.getElementById("addAllBtn").hidden = !(mode === "plan" && regulars.length > 0);
   }
 
   function paint(elId, group, status, emptyMsg) {
@@ -683,7 +790,6 @@
   function paintRegulars() {
     var el = document.getElementById("regularsEl");
     el.innerHTML = "";
-    document.getElementById("addAllBtn").hidden = regulars.length === 0;
     if (!regulars.length) {
       el.innerHTML = '<div class="empty">' + starIcon(false) +
         '<p>No regulars yet.<br>Add staples you buy often, or tap the star on any item.</p></div>';
@@ -853,10 +959,9 @@
     }
   });
   document.getElementById("addAllBtn").addEventListener("click", addAllRegulars);
-  document.getElementById("clearDone").addEventListener("click", function () {
-    items = items.filter(function (i) { return i.status !== "done"; });
-    save(); render();
-  });
+  document.getElementById("clearList").addEventListener("click", clearList);
+  document.getElementById("clearRegulars").addEventListener("click", clearRegularsAll);
+  document.getElementById("clearDone").addEventListener("click", clearDoneAll);
 
   var deferredPrompt = null;
   var banner = document.getElementById("installBanner");
@@ -923,7 +1028,6 @@
     img.src = svgUri;
   })();
 
-  render();
   setMode(mode);
 })();
 </script>
