@@ -26,6 +26,7 @@
   }
 
   * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  [hidden] { display: none !important; }
 
   html, body { height: 100%; }
 
@@ -65,7 +66,23 @@
   .app-icon svg { width: 100%; height: 100%; display: block; }
 
   header h1 { font-size: 24px; font-weight: 700; letter-spacing: -0.02em; }
-  .count { font-size: 13px; color: var(--muted); font-weight: 500; }
+  .mode-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    border: 1.5px solid var(--line);
+    border-radius: 999px;
+    background: #fff;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--ink);
+    cursor: pointer;
+    white-space: nowrap;
+    transition: transform 0.1s;
+  }
+  .mode-toggle:active { transform: scale(0.95); }
+  .mode-toggle svg { width: 16px; height: 16px; }
 
   .add-row { display: flex; gap: 8px; }
 
@@ -326,7 +343,7 @@
         <span class="app-icon" aria-hidden="true"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="#16a34a"/><path d="M16 26 H48 V46 a7 7 0 0 1 -7 7 H23 a7 7 0 0 1 -7 -7 Z" fill="#ffffff"/><path d="M26 27 C26 16 38 16 38 27" fill="none" stroke="#ffffff" stroke-width="3.2" stroke-linecap="round"/><path d="M32 31 C27 34 27 40 32 43 C37 40 37 34 32 31 Z" fill="#16a34a"/><path d="M32 33.5 V42" stroke="#ffffff" stroke-width="1.3" stroke-linecap="round"/></svg></span>
         <h1>Grocery</h1>
       </div>
-      <span class="count" id="count"></span>
+      <button class="mode-toggle" id="modeToggle" aria-label="Switch to regulars"></button>
     </div>
     <div class="add-row">
       <input id="newItem" type="text" placeholder="Add an item, or paste a list…" autocomplete="off" enterkeyhint="done" />
@@ -334,7 +351,7 @@
     </div>
     <div class="tabs">
       <button class="tab active" data-tab="list">To buy <span class="pill" id="pill-list">0</span></button>
-      <button class="tab" data-tab="regulars">Regulars <span class="pill" id="pill-reg">0</span></button>
+      <button class="tab" data-tab="regulars" hidden>Regulars <span class="pill" id="pill-reg">0</span></button>
       <button class="tab" data-tab="done">Done <span class="pill" id="pill-done">0</span></button>
     </div>
   </header>
@@ -374,10 +391,12 @@
 
   var KEY = "shoppingItems.v2";
   var REG_KEY = "groceryRegulars.v1";
+  var MODE_KEY = "groceryMode";
   var uid = function () { return Date.now().toString(36) + Math.random().toString(36).slice(2, 6); };
   var items = load();
   var regulars = loadReg();
   var currentTab = "list";
+  var mode = localStorage.getItem(MODE_KEY) === "plan" ? "plan" : "shop";
   var toastTimer = null;
   var toastUndoCb = null;
 
@@ -616,6 +635,26 @@
     t.addEventListener("click", function () { switchTab(t.dataset.tab); });
   });
 
+  function setMode(m) {
+    mode = m;
+    localStorage.setItem(MODE_KEY, m);
+    var plan = (m === "plan");
+    document.querySelector('[data-tab="list"]').hidden = plan;
+    document.querySelector('[data-tab="done"]').hidden = plan;
+    document.querySelector('[data-tab="regulars"]').hidden = !plan;
+    var toggle = document.getElementById("modeToggle");
+    toggle.innerHTML = plan
+      ? bagIcon() + "<span>Shopping</span>"
+      : starIcon(false) + "<span>Regulars</span>";
+    toggle.setAttribute("aria-label", plan ? "Switch to shopping mode" : "Switch to regulars");
+    switchTab(plan ? "regulars" : "list");
+  }
+
+  document.getElementById("modeToggle").addEventListener("click", function () {
+    setMode(mode === "plan" ? "shop" : "plan");
+    buzz();
+  });
+
   function render() {
     var groups = { list: [], done: [] };
     items.forEach(function (i) { (groups[i.status] || groups.list).push(i); });
@@ -623,10 +662,6 @@
     document.getElementById("pill-list").textContent = groups.list.length;
     document.getElementById("pill-done").textContent = groups.done.length;
     document.getElementById("pill-reg").textContent = regulars.length;
-
-    var remaining = groups.list.length;
-    document.getElementById("count").textContent =
-      remaining === 0 ? "all done 🎉" : remaining + (remaining === 1 ? " item left" : " items left");
 
     paint("listEl", groups.list, "list", "Nothing to buy yet.<br>Add items above to get started.");
     paint("doneEl", groups.done, "done", "Nothing completed yet.");
@@ -889,6 +924,7 @@
   })();
 
   render();
+  setMode(mode);
 })();
 </script>
 <script>
